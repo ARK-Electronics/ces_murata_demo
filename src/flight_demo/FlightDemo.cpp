@@ -23,7 +23,19 @@ FlightDemo::FlightDemo(rclcpp::Node& node)
 	_vehicle_land_detected_sub = _node.create_subscription<px4_msgs::msg::VehicleLandDetected>("/fmu/out/vehicle_land_detected",
 				     rclcpp::QoS(1).best_effort(), std::bind(&FlightDemo::vehicleLandDetectedCallback, this, std::placeholders::_1));
 
+    _vehicle_status_sub = _node.create_subscription<px4_msgs::msg::VehicleStatus>("/fmu/out/vehicle_status",
+                     rclcpp::QoS(1).best_effort(), std::bind(&FlightDemo::vehicleStatusCallback, this, std::placeholders::_1));
+    _vehicle_command_pub = _node.create_publisher<px4_msgs::msg::VehicleCommand>("/fmu/in/vehicle_command", 1);
+
 	loadParameters();
+    float offset = 0.5;
+    float approach = 1.0;
+    _target_positions.push_back(Eigen::Vector3f(0.0, 0.0, -approach));
+    _target_positions.push_back(Eigen::Vector3f(offset, offset, -approach));
+    _target_positions.push_back(Eigen::Vector3f(offset, -offset, -approach));
+    _target_positions.push_back(Eigen::Vector3f(-offset, -offset, -approach));
+    _target_positions.push_back(Eigen::Vector3f(-offset, offset, -approach));
+    _target_positions.push_back(Eigen::Vector3f(0.0, 0.0, -approach));
 }
 
 void FlightDemo::loadParameters()
@@ -48,24 +60,49 @@ void FlightDemo::loadParameters()
 	RCLCPP_INFO(_node.get_logger(), "vel_i_gain: %f", _param_vel_i_gain);
 }
 
+void FlightDemo::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg)
+{
+    _vehicle_status = msg;
+}
+
 void FlightDemo::vehicleLandDetectedCallback(const px4_msgs::msg::VehicleLandDetected::SharedPtr msg)
 {
     _land_detected = msg->landed;
 }
 
-// void FlightDemo::targetPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
-// {
-//     RCLCPP_INFO(_node.get_logger(), "TODO: Implement targetPoseCallback");
-// }
+// Vehicle command can be used for Arming, Disarming, Takeoff, Land
+void FlightDemo::vehicleCommandPub(int command, float param1, float param2 = std::nan(""), float param3= std::nan(""),float param4= std::nan(""), float param5= std::nan(""),float param6= std::nan(""), float param7 = std::nan(""))
+{
+    px4_msgs::msg::VehicleCommand vehicle_command{};
+    vehicle_command.timestamp = _node.get_clock()->now().nanoseconds() / 1000;
+    vehicle_command.command = command;  // Command ID
+    vehicle_command.param1 = param1;
+    vehicle_command.param2 = param2;
+    vehicle_command.param3 = param3;
+    vehicle_command.param4 = param4;
+    vehicle_command.param5 = param5;
+    vehicle_command.param6 = param6;
+    vehicle_command.param7 = param7;    // Altitude value during takeoff
+    vehicle_command.target_system = 1;  // System which should execute the command
+    vehicle_command.target_component = 1;   // Component which should execute the command
+    vehicle_command.source_system = 1;  // System which sent the command
+    vehicle_command.source_component = 1;   // Component which sent the command
+    vehicle_command.from_external = true; // Indicate it's from an external source
+    _vehicle_command_pub->publish(vehicle_command);
+}
 
 void FlightDemo::onActivate()
 {
-    _state = State::Takeoff;
+    RCLCPP_INFO(_node.get_logger(), "FlightDemo activated");
+    RCLCPP_INFO(_node.get_logger(), "Idle for 1 minute");
+    _action_time_started = _node.now();
+    _state = State::Idle;
     _land_detected = false;
+    
 }
 void FlightDemo::onDeactivate()
 {
-    _state = State::Idle;
+    // no op
 }
 
 void FlightDemo::updateSetpoint(float dt_s)
@@ -73,15 +110,94 @@ void FlightDemo::updateSetpoint(float dt_s)
     switch (_state)
     {
         case State::Idle:{
+            
+            // Idle for 1 minute
+            if (_node.now() - _action_time_started > 60s){
+                _action_time_started = _node.now();
+                switchState(State::Waypoint);
+            }
+
+
             break;
         }
         case State::Takeoff:{
+            // publish arm command
+            // vehicleCommandPub(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
+            // RCLCPP_INFO(_node.get_logger(), "Arming vehicle");
+
+            // if (_vehicle_status->arming_state == px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED){
+            //     vehicleCommandPub(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, 1.0, 0.0, 2.0);
+            // }
+
+            if(_vehicle_local_position->positionNed().z() <= -2.0){
+                switchState(State::Idle);
+            }
+            
+
+
+
             break;
         }
         case State::Waypoint:{
+            // Go to rectengular waypoints
+            Eigen::Vector3f target = _target_positions[_target_index];
+            if (positionReached(target)){
+                _target_index++;
+                RCLCPP_INFO(_node.get_logger(), "Waypoint reached");
+                if (_target_index >= _target_positions.size()){
+                    RCLCPP_INFO(_node.get_logger(), "All waypoints reached, starting yaw");
+                    _action_time_started = _node.now();
+                    switchState(State::Yaw);
+                }
+            }
+            else{
+                _trajectory_setpoint->updatePosition(target);
+            }
+
+            break;
+        }
+        case State::Yaw:{
+            // When I do this, the drone will yaw around for 360 degrees slowly, but also shift in the x and y direction and goes up and down
+            // Yaw around for 360 degrees slowly
+            _trajectory_setpoint->update(
+                Eigen::Vector3f(NAN, NAN, NAN),
+                std::nullopt,
+                std::nullopt,
+                _yaw_speed
+            );
+            
+            if((_node.now() - _action_time_started > 60s)&&(_logic_flag == false)){
+                _yaw_speed = -_yaw_speed;
+                _logic_flag = true;
+            }
+
+            if(_node.now() - _action_time_started > 120s){
+                _trajectory_setpoint->update(
+                Eigen::Vector3f(0.0, 0.0, 0.0),
+                std::nullopt,
+                std::nullopt,
+                std::nullopt
+            );
+                switchState(State::Land);
+               
+            }
+            // vehicleCommandPub(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_CONDITION_YAW, 1.0, 0.0, 2.0);
+
+            
+
             break;
         }
         case State::Land:{
+            _trajectory_setpoint->update(
+                Eigen::Vector3f(0.0, 0.0, _param_descent_vel),
+                std::nullopt,
+                std::nullopt,
+                std::nullopt
+            );
+
+        if (_land_detected) {
+			switchState(State::Done);
+		}
             break;
         }
         case State::Done:
@@ -143,10 +259,14 @@ std::string FlightDemo::stateName(State state)
             return "Idle";
         case State::Waypoint:
             return "Waypoint";
+        case State::Yaw:
+            return "Yaw";
         case State::Land:
             return "Land";
         case State::Done:
             return "Done";
+        case State::Interrupt:
+            return "Interrupt";
         default:
 		return "Unknown";
     }
