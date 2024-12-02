@@ -6,17 +6,20 @@ FlightDemo::FlightDemo()
 {
     _vehicle_command_pub = this->create_publisher<px4_msgs::msg::VehicleCommand>("/fmu/in/vehicle_command", 10);
     _vehicle_status_sub = this->create_subscription<px4_msgs::msg::VehicleStatus>(
-        "/fmu/out/vehicle_status", 10, std::bind(&FlightDemo::vehicleStatusCallback, this, std::placeholders::_1));
+    "/fmu/out/vehicle_status",
+    rclcpp::QoS(1).best_effort(), // Use SensorDataQoS for PX4 compatibility
+    std::bind(&FlightDemo::vehicleStatusCallback, this, std::placeholders::_1));
 
     RCLCPP_INFO(this->get_logger(), "FlightDemo node initialized.");
 
-    // Run the state machine
-    run();
+    // // Run the state machine
+    // run();
 }
 
 void FlightDemo::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg)
 {
     _vehicle_status = msg;
+    // RCLCPP_INFO(this->get_logger(), "Vehicle status received:");
 }
 
 void FlightDemo::publishVehicleCommand(int command, float param1, float param2, float param3, float param4,
@@ -47,7 +50,7 @@ void FlightDemo::switchState()
     {
     case State::Idle:
 
-        if(_vehicle_status->pre_flight_checks_pass)
+        if(_vehicle_status && _vehicle_status->pre_flight_checks_pass)
         {
             RCLCPP_INFO(this->get_logger(), "State: Idle -> Arm");
             publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0); // Arm
@@ -64,7 +67,7 @@ void FlightDemo::switchState()
         }
 
     case State::Arm:
-        if (_vehicle_status->arming_state == px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED)
+        if (_vehicle_status && _vehicle_status->arming_state == px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED)
         {
             RCLCPP_INFO(this->get_logger(), "State: Arm -> Takeoff");
             _state = State::Takeoff;
@@ -115,8 +118,9 @@ void FlightDemo::run()
 {
     while (rclcpp::ok() && _state != State::Done)
     {
-        switchState();
-        rclcpp::sleep_for(std::chrono::milliseconds(100));
+        rclcpp::spin_some(this->get_node_base_interface()); // Process incoming messages
+        switchState(); // Execute state machine logic
+        rclcpp::sleep_for(std::chrono::milliseconds(100)); // Small delay to reduce CPU usage
     }
 }
 
@@ -124,7 +128,8 @@ int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<FlightDemo>();
-    rclcpp::spin(node);
+    // rclcpp::spin(node);
+    node->run();
     rclcpp::shutdown();
     return 0;
 }
