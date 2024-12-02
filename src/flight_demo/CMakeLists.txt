@@ -8,13 +8,9 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(eigen3_cmake_module REQUIRED)
-find_package(Eigen3 REQUIRED)
-
-find_package(px4_ros2_cpp REQUIRED)
+find_package(px4_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
-find_package(tf2 REQUIRED)
+
 
 include_directories(
   include
@@ -23,8 +19,7 @@ include_directories(
 add_executable(flight_demo 
   FlightDemo.cpp)
 
-  ament_target_dependencies(flight_demo rclcpp Eigen3 px4_ros2_cpp geometry_msgs tf2_ros tf2)
-
+  ament_target_dependencies(flight_demo rclcpp  geometry_msgs px4_msgs)
   target_compile_features(flight_demo PUBLIC c_std_99 cxx_std_17)
   
   install(TARGETS flight_demo DESTINATION lib/${PROJECT_NAME})
