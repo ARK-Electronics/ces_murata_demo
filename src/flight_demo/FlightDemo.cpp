@@ -88,7 +88,18 @@ void FlightDemo::switchState()
     case State::Hover:
         if (isStateTimeout(60.0)) // Hover for 5 seconds
         {
-            RCLCPP_INFO(this->get_logger(), "State: Hover -> Land");
+            RCLCPP_INFO(this->get_logger(), "State: Hover -> Yaw");
+            _state = State::Yaw;
+            _state_start_time = this->now();
+            // uint16 VEHICLE_CMD_CONDITION_YAW = 115			# Reach a certain target angle. |target angle: [0-360], 0 is north| speed during yaw change:[deg per second]| direction: negative: counter clockwise, positive: clockwise [-1,1]| relative offset or absolute angle: [ 1,0]| Empty| Empty| Empty|
+            publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_CONDITION_YAW, 360.0, 10.0, 1.0, 1.0);
+        }
+        break;
+
+    case State::Yaw:
+        if (isStateTimeout(60.0)) // Wait for 5 seconds to yaw
+        {
+            RCLCPP_INFO(this->get_logger(), "State: Yaw -> Land");
             _state = State::Land;
             _state_start_time = this->now();
             publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_LAND); // Land

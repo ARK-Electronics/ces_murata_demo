@@ -24,6 +24,7 @@ private:
         Arm,
         Takeoff,
         Hover,
+        Yaw,
         Land,
         Done
     };
