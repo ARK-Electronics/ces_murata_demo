@@ -2,6 +2,8 @@
 
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
+#include <px4_msgs/msg/offboard_control_mode.hpp>
+#include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <cmath>
 
@@ -16,7 +18,16 @@ private:
     void vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
     void publishVehicleCommand(int command, float param1 = NAN, float param2 = NAN, float param3 = NAN, float param4 = NAN, 
                                float param5 = NAN, float param6 = NAN, float param7 = NAN);
+    rclcpp::TimerBase::SharedPtr _offboard_timer;
+    void offboardTimerCallback();
+    
     void switchState();
+    void arm();
+    void takeoff();
+    void switchToOffboard();
+    void disarm();
+    void land();
+    
 
     enum class State
     {
@@ -31,8 +42,11 @@ private:
 
     rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr _vehicle_command_pub;
     rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr _vehicle_status_sub;
+    rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr _trajectory_setpoint_pub;
+    rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr _offboard_control_mode_pub;
 
     px4_msgs::msg::VehicleStatus::SharedPtr _vehicle_status;
+    // px4_msgs::msg::TrajectorySetpoint _trajectory_setpoint;
 
     State _state;
     rclcpp::Time _state_start_time;

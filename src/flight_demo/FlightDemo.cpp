@@ -9,6 +9,13 @@ FlightDemo::FlightDemo()
     "/fmu/out/vehicle_status",
     rclcpp::QoS(1).best_effort(), // Use SensorDataQoS for PX4 compatibility
     std::bind(&FlightDemo::vehicleStatusCallback, this, std::placeholders::_1));
+    _trajectory_setpoint_pub = this->create_publisher<px4_msgs::msg::TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
+    _offboard_control_mode_pub = this->create_publisher<px4_msgs::msg::OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
+    // Start the offboard timer
+    _offboard_timer = this->create_wall_timer(
+        std::chrono::milliseconds(100), // Timer period: 100 ms
+        std::bind(&FlightDemo::offboardTimerCallback, this)
+    );
 
     RCLCPP_INFO(this->get_logger(), "FlightDemo node initialized.");
 
@@ -44,6 +51,52 @@ void FlightDemo::publishVehicleCommand(int command, float param1, float param2, 
     _vehicle_command_pub->publish(vehicle_command);
 }
 
+void FlightDemo::offboardTimerCallback()
+{
+    px4_msgs::msg::OffboardControlMode offboard_control_mode{};
+    offboard_control_mode.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+    offboard_control_mode.position = true;
+    offboard_control_mode.velocity = false;
+    offboard_control_mode.acceleration = false;
+    offboard_control_mode.attitude = false;
+    offboard_control_mode.body_rate = false;
+
+
+    _offboard_control_mode_pub->publish(offboard_control_mode);
+    px4_msgs::msg::TrajectorySetpoint trajectory_setpoint{};
+    trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+    trajectory_setpoint.position[0] = 0.0;   // Setpoint X position in meters
+    trajectory_setpoint.position[1] = 0.0;   // Setpoint Y position in meters
+    trajectory_setpoint.position[2] = -2.0;  // Altitude in meters
+    trajectory_setpoint.yawspeed = 0.2; // Yaw in radians
+
+    _trajectory_setpoint_pub->publish(trajectory_setpoint);
+}
+void FlightDemo::arm()
+{
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0); // Arm
+}
+
+void FlightDemo::takeoff()
+{
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, 2.0);
+}
+
+void FlightDemo::disarm()
+{
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0); // Disarm
+}
+
+void FlightDemo::land()
+{
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_LAND); // Land
+}
+
+void FlightDemo::switchToOffboard()
+{
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_DO_SET_MODE, 1.0, 6.0); // Set mode to offboard
+}
+
 void FlightDemo::switchState()
 {
     switch (_state)
@@ -53,7 +106,7 @@ void FlightDemo::switchState()
         if(_vehicle_status && _vehicle_status->pre_flight_checks_pass)
         {
             RCLCPP_INFO(this->get_logger(), "State: Idle -> Arm");
-            publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0); // Arm
+            arm();
             _state = State::Arm;
             _state_start_time = this->now();
             break;
@@ -72,13 +125,14 @@ void FlightDemo::switchState()
             RCLCPP_INFO(this->get_logger(), "State: Arm -> Takeoff");
             _state = State::Takeoff;
             _state_start_time = this->now();
-            publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, 2.0);
+            takeoff();
         }
         break;
 
     case State::Takeoff:
-        if (isStateTimeout(5.0)) // Wait for 5 seconds to reach altitude
-        {
+        if (_vehicle_status && _vehicle_status->nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER) // Wait for 5 seconds to reach altitude
+        {   
+            switchToOffboard();
             RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
             _state = State::Hover;
             _state_start_time = this->now();
@@ -102,7 +156,7 @@ void FlightDemo::switchState()
             RCLCPP_INFO(this->get_logger(), "State: Yaw -> Land");
             _state = State::Land;
             _state_start_time = this->now();
-            publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_LAND); // Land
+            land();
         }
         break;
 
@@ -110,6 +164,7 @@ void FlightDemo::switchState()
         if (isStateTimeout(5.0)) // Wait for 5 seconds to land
         {
             RCLCPP_INFO(this->get_logger(), "State: Land -> Done");
+            disarm();
             _state = State::Done;
         }
         break;
