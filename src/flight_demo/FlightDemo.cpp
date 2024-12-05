@@ -95,7 +95,7 @@ void FlightDemo::arm()
 
 void FlightDemo::takeoff()
 {
-    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, _takeoff_altitude); // Takeoff
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, 2.0); // Takeoff
 }
 
 void FlightDemo::disarm()
