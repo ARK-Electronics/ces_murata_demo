@@ -9,6 +9,7 @@ FlightDemo::FlightDemo()
     "/fmu/out/vehicle_status",
     rclcpp::QoS(1).best_effort(), // Use SensorDataQoS for PX4 compatibility
     std::bind(&FlightDemo::vehicleStatusCallback, this, std::placeholders::_1));
+    _local_position_sub = this->create_subscription<px4_msgs::msg::VehicleLocalPosition>("fmu/out/local_position", 10, std::bind(&FlightDemo::localPositionCallback, this, std::placeholders::_1));
     _trajectory_setpoint_pub = this->create_publisher<px4_msgs::msg::TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
     _offboard_control_mode_pub = this->create_publisher<px4_msgs::msg::OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
     // Start the offboard timer
@@ -16,6 +17,11 @@ FlightDemo::FlightDemo()
         std::chrono::milliseconds(100), // Timer period: 100 ms
         std::bind(&FlightDemo::offboardTimerCallback, this)
     );
+    _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+    _trajectory_setpoint.position[0] = 0.0;   // Setpoint X position in meters
+    _trajectory_setpoint.position[1] = 0.0;   // Setpoint Y position in meters
+    _trajectory_setpoint.position[2] = -2.0;  // Altitude in meters
+
 
     RCLCPP_INFO(this->get_logger(), "FlightDemo node initialized.");
 
@@ -27,6 +33,21 @@ void FlightDemo::vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::Share
 {
     _vehicle_status = msg;
     // RCLCPP_INFO(this->get_logger(), "Vehicle status received:");
+}
+void FlightDemo::localPositionCallback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg)
+{
+    // RCLCPP_INFO(this->get_logger(), "Local position received:");
+    _local_position = msg;
+}
+
+void FlightDemo::loadParameters()
+{
+    this->declare_parameter<float>("takeoff_altitude", 1.5);
+    this->declare_parameter<float>("hover_duration", 60.0);
+
+    this->get_parameter("takeoff_altitude", _takeoff_altitude);
+    this->get_parameter("hover_duration", _hover_duration);
+
 }
 
 void FlightDemo::publishVehicleCommand(int command, float param1, float param2, float param3, float param4,
@@ -63,14 +84,9 @@ void FlightDemo::offboardTimerCallback()
 
 
     _offboard_control_mode_pub->publish(offboard_control_mode);
-    px4_msgs::msg::TrajectorySetpoint trajectory_setpoint{};
-    trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
-    trajectory_setpoint.position[0] = 0.0;   // Setpoint X position in meters
-    trajectory_setpoint.position[1] = 0.0;   // Setpoint Y position in meters
-    trajectory_setpoint.position[2] = -2.0;  // Altitude in meters
-    trajectory_setpoint.yawspeed = 0.2; // Yaw in radians
+    
 
-    _trajectory_setpoint_pub->publish(trajectory_setpoint);
+    _trajectory_setpoint_pub->publish(_trajectory_setpoint);
 }
 void FlightDemo::arm()
 {
@@ -79,7 +95,7 @@ void FlightDemo::arm()
 
 void FlightDemo::takeoff()
 {
-    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, 2.0);
+    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, _takeoff_altitude); // Takeoff
 }
 
 void FlightDemo::disarm()
@@ -130,7 +146,7 @@ void FlightDemo::switchState()
         break;
 
     case State::Takeoff:
-        if (_vehicle_status && _vehicle_status->nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER) // Wait for 5 seconds to reach altitude
+        if (_vehicle_status && _vehicle_status->nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER && isStateTimeout(5)) // Wait for 5 seconds to reach altitude
         {   
             switchToOffboard();
             RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
@@ -140,17 +156,19 @@ void FlightDemo::switchState()
         break;
 
     case State::Hover:
-        if (isStateTimeout(60.0)) // Hover for 5 seconds
+        if (isStateTimeout(_hover_duration)) // Hover for some time
         {
             RCLCPP_INFO(this->get_logger(), "State: Hover -> Yaw");
+            
             _state = State::Yaw;
             _state_start_time = this->now();
-            // uint16 VEHICLE_CMD_CONDITION_YAW = 115			# Reach a certain target angle. |target angle: [0-360], 0 is north| speed during yaw change:[deg per second]| direction: negative: counter clockwise, positive: clockwise [-1,1]| relative offset or absolute angle: [ 1,0]| Empty| Empty| Empty|
-            publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_CONDITION_YAW, 360.0, 10.0, 1.0, 1.0);
+            
         }
         break;
 
     case State::Yaw:
+        _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+        _trajectory_setpoint.yaw = 3.14; // Yaw 90 degrees
         if (isStateTimeout(60.0)) // Wait for 5 seconds to yaw
         {
             RCLCPP_INFO(this->get_logger(), "State: Yaw -> Land");
@@ -194,7 +212,6 @@ int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<FlightDemo>();
-    // rclcpp::spin(node);
     node->run();
     rclcpp::shutdown();
     return 0;
