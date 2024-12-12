@@ -95,7 +95,8 @@ void FlightDemo::arm()
 
 void FlightDemo::takeoff()
 {
-    publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, 2.0); // Takeoff
+    // publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, 2.0); // Takeoff
+    // Trajectory setpoint
 }
 
 void FlightDemo::disarm()
@@ -122,8 +123,8 @@ void FlightDemo::switchState()
         if(_vehicle_status && _vehicle_status->pre_flight_checks_pass)
         {
             RCLCPP_INFO(this->get_logger(), "State: Idle -> Arm");
-            arm();
-            _state = State::Arm;
+            // arm();
+            _state = State::Takeoff;
             _state_start_time = this->now();
             break;
         }
@@ -141,34 +142,40 @@ void FlightDemo::switchState()
             RCLCPP_INFO(this->get_logger(), "State: Arm -> Takeoff");
             _state = State::Takeoff;
             _state_start_time = this->now();
-            takeoff();
+            // takeoff();
         }
         break;
 
     case State::Takeoff:
-        if (_vehicle_status && _vehicle_status->nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER && isStateTimeout(5)) // Wait for 5 seconds to reach altitude
-        {   
-            switchToOffboard();
-            RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
-            _state = State::Hover;
-            _state_start_time = this->now();
-        }
+        // if (_vehicle_status && _vehicle_status->nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER || TRUE) 
+        // {   
+        //     switchToOffboard();
+        //     RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
+        //     _state = State::Hover;
+        //     _state_start_time = this->now();
+        // }
+
+        switchToOffboard();
+        arm();
+        RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
+        _state = State::Hover;
+        _state_start_time = this->now();
         break;
 
     case State::Hover:
-        if (isStateTimeout(_hover_duration)) // Hover for some time
+        if (isStateTimeout(60.0)) // Hover for some time
         {
-            RCLCPP_INFO(this->get_logger(), "State: Hover -> Yaw");
+            RCLCPP_INFO(this->get_logger(), "State: Hover -> Land");
             
-            _state = State::Yaw;
+            _state = State::Land;
             _state_start_time = this->now();
             
         }
         break;
 
     case State::Yaw:
-        _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
-        _trajectory_setpoint.yaw = 3.14; // Yaw 90 degrees
+        // _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+        // _trajectory_setpoint.yaw = 3.14; // Yaw 90 degrees
         if (isStateTimeout(60.0)) // Wait for 5 seconds to yaw
         {
             RCLCPP_INFO(this->get_logger(), "State: Yaw -> Land");

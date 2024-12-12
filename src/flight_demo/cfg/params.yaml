@@ -1,4 +1,4 @@
 flight_demo:
   ros__parameters:
     takeoff_altitude: 1.5
-    hover_duration: 60
+    hover_duration: 60.0
