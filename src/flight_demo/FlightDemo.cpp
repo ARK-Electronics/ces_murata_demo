@@ -156,10 +156,14 @@ void FlightDemo::switchState()
         // }
 
         switchToOffboard();
-        arm();
-        RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
-        _state = State::Hover;
-        _state_start_time = this->now();
+        if(isStateTimeout(3.0))
+        {
+            arm();
+            RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
+            _state = State::Hover;
+            _state_start_time = this->now();
+        }
+        
         break;
 
     case State::Hover:
