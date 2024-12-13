@@ -87,7 +87,7 @@ void FlightDemo::offboardTimerCallback()
     _offboard_control_mode_pub->publish(offboard_control_mode);
     
 
-    _trajectory_setpoint_pub->publish(_trajectory_setpoint);
+    
 }
 void FlightDemo::arm()
 {
@@ -123,6 +123,9 @@ void FlightDemo::switchState()
 
         if(_vehicle_status && _vehicle_status->pre_flight_checks_pass)
         {
+            _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+            // Publish the trajectory setpoint
+            _trajectory_setpoint_pub->publish(_trajectory_setpoint);
             RCLCPP_INFO(this->get_logger(), "State: Idle -> Arm");
             // arm();
             _state = State::Takeoff;
@@ -156,13 +159,18 @@ void FlightDemo::switchState()
         //     _state_start_time = this->now();
         // }
 
-        
+        _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+        // Publish the trajectory setpoint
+        _trajectory_setpoint_pub->publish(_trajectory_setpoint);
         if(isStateTimeout(3.0))
         {
             switchToOffboard();
             if (isStateTimeout(5.0))
             {
                 arm();
+            _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+            // Publish the trajectory setpoint
+            _trajectory_setpoint_pub->publish(_trajectory_setpoint);
                 RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
                 _state = State::Hover;
                 _state_start_time = this->now();
