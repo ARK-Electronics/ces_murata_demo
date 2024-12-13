@@ -7,6 +7,7 @@
 #include <px4_msgs/msg/vehicle_local_position.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <cmath>
+#include <array>
 
 class FlightDemo : public rclcpp::Node
 {
@@ -23,7 +24,7 @@ private:
     rclcpp::TimerBase::SharedPtr _offboard_timer;
     void offboardTimerCallback();
     
-    void switchState();
+    void runStateMachine();
     void arm();
     void takeoff();
     void switchToOffboard();
@@ -49,9 +50,10 @@ private:
     rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr _offboard_control_mode_pub;
     rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr _local_position_sub;
 
-    px4_msgs::msg::VehicleStatus::SharedPtr _vehicle_status;
-    px4_msgs::msg::VehicleLocalPosition::SharedPtr _local_position;
-    px4_msgs::msg::TrajectorySetpoint _trajectory_setpoint;
+    px4_msgs::msg::VehicleStatus _vehicle_status {};
+    px4_msgs::msg::VehicleLocalPosition _local_position {};
+
+    std::array<float, 3> _hover_setpoint {};
 
     State _state;
     rclcpp::Time _state_start_time;
