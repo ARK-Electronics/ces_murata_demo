@@ -17,6 +17,7 @@ FlightDemo::FlightDemo()
         std::chrono::milliseconds(100), // Timer period: 100 ms
         std::bind(&FlightDemo::offboardTimerCallback, this)
     );
+    _state_start_time = this->now();
     _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
     _trajectory_setpoint.position[0] = 0.0;   // Setpoint X position in meters
     _trajectory_setpoint.position[1] = 0.0;   // Setpoint Y position in meters
@@ -155,13 +156,18 @@ void FlightDemo::switchState()
         //     _state_start_time = this->now();
         // }
 
-        switchToOffboard();
+        
         if(isStateTimeout(3.0))
         {
-            arm();
-            RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
-            _state = State::Hover;
-            _state_start_time = this->now();
+            switchToOffboard();
+            if (isStateTimeout(5.0))
+            {
+                arm();
+                RCLCPP_INFO(this->get_logger(), "State: Takeoff -> Hover");
+                _state = State::Hover;
+                _state_start_time = this->now();
+            }
+            
         }
         
         break;
