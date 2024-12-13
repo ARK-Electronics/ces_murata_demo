@@ -26,7 +26,6 @@ private:
     
     void runStateMachine();
     void arm();
-    void takeoff();
     void switchToOffboard();
     void disarm();
     void land();

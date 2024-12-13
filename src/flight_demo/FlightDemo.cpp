@@ -91,8 +91,6 @@ void FlightDemo::runStateMachine()
         {
             _hover_setpoint[0] = _local_position.x;
             _hover_setpoint[1] = _local_position.y;
-            // _hover_setpoint[0] = NAN;
-            // _hover_setpoint[1] = NAN;
             _hover_setpoint[2] = _local_position.z - 2.f;
 
             _state = State::Hover;
@@ -110,7 +108,6 @@ void FlightDemo::runStateMachine()
         sp.position[0] = _hover_setpoint[0];
         sp.position[1] = _hover_setpoint[1];
         sp.position[2] = _hover_setpoint[2];
-        _trajectory_setpoint_pub->publish(sp);
         _trajectory_setpoint_pub->publish(sp);
 
         if (isStateTimeout(60.0)) // Hover for some time
@@ -195,12 +192,6 @@ void FlightDemo::offboardTimerCallback()
 void FlightDemo::arm()
 {
     publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0); // Arm
-}
-
-void FlightDemo::takeoff()
-{
-    // publishVehicleCommand(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_NAV_TAKEOFF, NAN, NAN, NAN, NAN, NAN, NAN, 2.0); // Takeoff
-    // Trajectory setpoint
 }
 
 void FlightDemo::disarm()
