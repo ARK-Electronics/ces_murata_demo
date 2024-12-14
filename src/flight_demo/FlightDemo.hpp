@@ -51,8 +51,10 @@ private:
 
     px4_msgs::msg::VehicleStatus _vehicle_status {};
     px4_msgs::msg::VehicleLocalPosition _local_position {};
+    
 
     std::array<float, 3> _hover_setpoint {};
+    std::array<float, 4> _home_setpoint {};
 
     State _state;
     rclcpp::Time _state_start_time;

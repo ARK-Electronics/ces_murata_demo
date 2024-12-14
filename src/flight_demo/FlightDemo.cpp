@@ -11,7 +11,11 @@ FlightDemo::FlightDemo()
     rclcpp::QoS(1).best_effort(), // Use SensorDataQoS for PX4 compatibility
     std::bind(&FlightDemo::vehicleStatusCallback, this, std::placeholders::_1));
 
-    _local_position_sub = this->create_subscription<px4_msgs::msg::VehicleLocalPosition>("fmu/out/local_position", 10, std::bind(&FlightDemo::localPositionCallback, this, std::placeholders::_1));
+    _local_position_sub = this->create_subscription<px4_msgs::msg::VehicleLocalPosition>(
+    "fmu/out/vehicle_local_position",
+    rclcpp::QoS(10).best_effort(),
+    std::bind(&FlightDemo::localPositionCallback, this, std::placeholders::_1));
+
     _trajectory_setpoint_pub = this->create_publisher<px4_msgs::msg::TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
     _offboard_control_mode_pub = this->create_publisher<px4_msgs::msg::OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
 
@@ -28,6 +32,7 @@ FlightDemo::FlightDemo()
     sp.position[0] = NAN;   // Setpoint X position in meters
     sp.position[1] = NAN;   // Setpoint Y position in meters
     sp.position[2] = NAN;  // Altitude in meters
+    sp.yaw = NAN;          // Yaw in radians
     _trajectory_setpoint_pub->publish(sp);
 
     RCLCPP_INFO(this->get_logger(), "FlightDemo node initialized.");
@@ -62,6 +67,10 @@ void FlightDemo::runStateMachine()
         {
             // Switch to offboard after 2 seconds
             if (isStateTimeout(2.0)) {
+                _home_setpoint[0] = _local_position.x;
+                _home_setpoint[1] = _local_position.y;
+                _home_setpoint[2] = _local_position.z;
+                _home_setpoint[3] = _local_position.heading;
                 switchToOffboard();
                 _state = State::Arm;
                 _state_start_time = this->now();
@@ -91,7 +100,7 @@ void FlightDemo::runStateMachine()
         {
             _hover_setpoint[0] = _local_position.x;
             _hover_setpoint[1] = _local_position.y;
-            _hover_setpoint[2] = _local_position.z - 2.f;
+            _hover_setpoint[2] = _local_position.z - 1.5f; // Hover 1.5 meters above the ground
 
             _state = State::Hover;
             _state_start_time = this->now();
@@ -108,13 +117,14 @@ void FlightDemo::runStateMachine()
         sp.position[0] = _hover_setpoint[0];
         sp.position[1] = _hover_setpoint[1];
         sp.position[2] = _hover_setpoint[2];
+        sp.yaw = _home_setpoint[3]; 
         _trajectory_setpoint_pub->publish(sp);
 
         if (isStateTimeout(60.0)) // Hover for some time
         {
-            RCLCPP_INFO(this->get_logger(), "State: Hover -> Land");
+            RCLCPP_INFO(this->get_logger(), "State: Hover -> Yaw");
 
-            _state = State::Land;
+            _state = State::Yaw;
             _state_start_time = this->now();
         }
 
@@ -123,9 +133,22 @@ void FlightDemo::runStateMachine()
 
     case State::Yaw:
     {
-        // _trajectory_setpoint.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
-        // _trajectory_setpoint.yaw = 3.14; // Yaw 90 degrees
-        if (isStateTimeout(60.0)) // Wait for 5 seconds to yaw
+        // Duration for the 360-degree rotation
+        const double rotation_duration = 120.0; // seconds
+
+        // Calculate yawspeed dynamically
+        const double yawspeed = 2 * M_PI / rotation_duration; // radians/second
+        px4_msgs::msg::TrajectorySetpoint sp;
+        sp.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+        sp.position[0] = _hover_setpoint[0];
+        sp.position[1] = _hover_setpoint[1];
+        sp.position[2] = _hover_setpoint[2];
+        // Yaw for 360 degrees slowly
+        sp.yaw = NAN; // Yaw 90 degrees
+        sp.yawspeed = yawspeed; // Yaw speed in radians/second
+        _trajectory_setpoint_pub->publish(sp);
+
+        if (isStateTimeout(rotation_duration)) // Wait for 5 seconds to yaw
         {
             RCLCPP_INFO(this->get_logger(), "State: Yaw -> Land");
             _state = State::Land;
