@@ -30,6 +30,7 @@ private:
     void disarm();
     void land();
     void loadParameters();
+    bool headingReached(float target_heading) const;
     
 
     enum class State

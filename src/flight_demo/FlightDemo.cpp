@@ -133,27 +133,44 @@ void FlightDemo::runStateMachine()
 
     case State::Yaw:
     {
-        // Duration for the 360-degree rotation
-        const double rotation_duration = 120.0; // seconds
+        // Step size for yaw increment (1 degree per step)
+        const double yaw_step = M_PI / 180.0; // 1 degree in radians
+        static double target_yaw = _local_position.heading; // Initialize with current heading
+        static double total_yaw_rotated = 0.0; // Total yaw rotated
 
-        // Calculate yawspeed dynamically
-        const double yawspeed = 2 * M_PI / rotation_duration; // radians/second
-        px4_msgs::msg::TrajectorySetpoint sp;
-        sp.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
-        sp.position[0] = _hover_setpoint[0];
-        sp.position[1] = _hover_setpoint[1];
-        sp.position[2] = _hover_setpoint[2];
-        // Yaw for 360 degrees slowly
-        sp.yaw = NAN; // Yaw 90 degrees
-        sp.yawspeed = yawspeed; // Yaw speed in radians/second
-        _trajectory_setpoint_pub->publish(sp);
+        // Check if the current heading is close enough to the target yaw
+        if (headingReached(target_yaw))
+        {
+            // Increment the target yaw
+            target_yaw += yaw_step;
+            total_yaw_rotated += yaw_step;
 
-        if (isStateTimeout(rotation_duration)) // Wait for 5 seconds to yaw
+            // Wrap target_yaw to keep it within -π to π
+            if (target_yaw > M_PI) target_yaw -= 2 * M_PI;
+            if (target_yaw < -M_PI) target_yaw += 2 * M_PI;
+
+            // Publish the new trajectory setpoint
+            px4_msgs::msg::TrajectorySetpoint sp;
+            sp.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
+            sp.position[0] = _hover_setpoint[0];
+            sp.position[1] = _hover_setpoint[1];
+            sp.position[2] = _hover_setpoint[2];
+            sp.yaw = target_yaw; // Update the yaw target
+            sp.yawspeed = NAN; // Let PX4 handle the speed
+            _trajectory_setpoint_pub->publish(sp);
+        }
+
+        // Check if the total yaw rotation is complete (360 degrees)
+        if (total_yaw_rotated >= 2 * M_PI) // Full 360-degree rotation
         {
             RCLCPP_INFO(this->get_logger(), "State: Yaw -> Land");
             _state = State::Land;
             _state_start_time = this->now();
             land();
+
+            // Reset yaw tracking variables for next use
+            target_yaw = _local_position.heading; // Reset to current heading
+            total_yaw_rotated = 0.0;
         }
 
         break;
@@ -236,6 +253,24 @@ void FlightDemo::switchToOffboard()
 bool FlightDemo::isStateTimeout(double seconds)
 {
     return (this->now() - _state_start_time).seconds() > seconds;
+}
+
+bool FlightDemo::headingReached(float target_heading) const
+{
+    const double degrees = 1.0;
+    const double tolerance = degrees * M_PI / 180.0; // Convert degrees to radians
+    // Get the current heading
+    auto current_heading = _local_position.heading;
+
+    // Calculate the angular difference
+    float delta_heading = target_heading - current_heading;
+
+    // Normalize the angular difference to the range [-π, π]
+    while (delta_heading > M_PI) delta_heading -= 2 * M_PI;
+    while (delta_heading < -M_PI) delta_heading += 2 * M_PI;
+
+    // Check if the heading difference is within tolerance
+    return fabs(delta_heading) < tolerance;
 }
 
 void FlightDemo::run()
