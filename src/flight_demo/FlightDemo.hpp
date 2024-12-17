@@ -5,6 +5,7 @@
 #include <px4_msgs/msg/offboard_control_mode.hpp>
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
+#include <px4_msgs/msg/vehicle_land_detected.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <cmath>
 #include <array>
@@ -19,6 +20,7 @@ public:
 private:
     void vehicleStatusCallback(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
     void localPositionCallback(const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg);
+    void vehicleLandDetectedCallback(const px4_msgs::msg::VehicleLandDetected::SharedPtr msg);
     void publishVehicleCommand(int command, float param1 = NAN, float param2 = NAN, float param3 = NAN, float param4 = NAN, 
                                float param5 = NAN, float param6 = NAN, float param7 = NAN);
     rclcpp::TimerBase::SharedPtr _offboard_timer;
@@ -49,18 +51,21 @@ private:
     rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr _trajectory_setpoint_pub;
     rclcpp::Publisher<px4_msgs::msg::OffboardControlMode>::SharedPtr _offboard_control_mode_pub;
     rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr _local_position_sub;
+    rclcpp::Subscription<px4_msgs::msg::VehicleLandDetected>::SharedPtr _vehicle_land_detected_sub;
 
     px4_msgs::msg::VehicleStatus _vehicle_status {};
     px4_msgs::msg::VehicleLocalPosition _local_position {};
     
 
-    std::array<float, 3> _hover_setpoint {};
+    // std::array<float, 3> _hover_setpoint {};
     std::array<float, 4> _home_setpoint {};
 
     State _state;
     rclcpp::Time _state_start_time;
 
     bool isStateTimeout(double seconds);
+    // Land detection
+	bool _land_detected = false;
 
     // Parameters
     float _takeoff_altitude;

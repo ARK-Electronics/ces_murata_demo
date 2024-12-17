@@ -16,6 +16,9 @@ FlightDemo::FlightDemo()
     rclcpp::QoS(10).best_effort(),
     std::bind(&FlightDemo::localPositionCallback, this, std::placeholders::_1));
 
+    _vehicle_land_detected_sub = this->create_subscription<px4_msgs::msg::VehicleLandDetected>("/fmu/out/vehicle_land_detected",
+                    rclcpp::QoS(1).best_effort(), std::bind(&FlightDemo::vehicleLandDetectedCallback, this, std::placeholders::_1));
+
     _trajectory_setpoint_pub = this->create_publisher<px4_msgs::msg::TrajectorySetpoint>("/fmu/in/trajectory_setpoint", 10);
     _offboard_control_mode_pub = this->create_publisher<px4_msgs::msg::OffboardControlMode>("/fmu/in/offboard_control_mode", 10);
 
@@ -48,6 +51,11 @@ void FlightDemo::localPositionCallback(const px4_msgs::msg::VehicleLocalPosition
     _local_position = *msg;
 }
 
+void FlightDemo::vehicleLandDetectedCallback(const px4_msgs::msg::VehicleLandDetected::SharedPtr msg)
+{
+	_land_detected = msg->landed;
+}
+
 void FlightDemo::loadParameters()
 {
     this->declare_parameter<float>("takeoff_altitude", 1.5);
@@ -69,7 +77,7 @@ void FlightDemo::runStateMachine()
             if (isStateTimeout(2.0)) {
                 _home_setpoint[0] = _local_position.x;
                 _home_setpoint[1] = _local_position.y;
-                _home_setpoint[2] = _local_position.z;
+                _home_setpoint[2] = _local_position.z - 1.5f; // Hover 1.5 meters above the ground
                 _home_setpoint[3] = _local_position.heading;
                 switchToOffboard();
                 _state = State::Arm;
@@ -98,9 +106,9 @@ void FlightDemo::runStateMachine()
 
         if (_vehicle_status.arming_state == px4_msgs::msg::VehicleStatus::ARMING_STATE_ARMED)
         {
-            _hover_setpoint[0] = _local_position.x;
-            _hover_setpoint[1] = _local_position.y;
-            _hover_setpoint[2] = _local_position.z - 1.5f; // Hover 1.5 meters above the ground
+            // _hover_setpoint[0] = _local_position.x;
+            // _hover_setpoint[1] = _local_position.y;
+            // _hover_setpoint[2] = _local_position.z - 1.5f; // Hover 1.5 meters above the ground
 
             _state = State::Hover;
             _state_start_time = this->now();
@@ -114,9 +122,9 @@ void FlightDemo::runStateMachine()
     {
         px4_msgs::msg::TrajectorySetpoint sp;
         sp.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
-        sp.position[0] = _hover_setpoint[0];
-        sp.position[1] = _hover_setpoint[1];
-        sp.position[2] = _hover_setpoint[2];
+        sp.position[0] = _home_setpoint[0];
+        sp.position[1] = _home_setpoint[1];
+        sp.position[2] = _home_setpoint[2];
         sp.yaw = _home_setpoint[3]; 
         _trajectory_setpoint_pub->publish(sp);
 
@@ -152,20 +160,19 @@ void FlightDemo::runStateMachine()
             // Publish the new trajectory setpoint
             px4_msgs::msg::TrajectorySetpoint sp;
             sp.timestamp = this->get_clock()->now().nanoseconds() / 1000; // PX4 expects microseconds
-            sp.position[0] = _hover_setpoint[0];
-            sp.position[1] = _hover_setpoint[1];
-            sp.position[2] = _hover_setpoint[2];
+            sp.position[0] = _home_setpoint[0];
+            sp.position[1] = _home_setpoint[1];
+            sp.position[2] = _home_setpoint[2];
             sp.yaw = target_yaw; // Update the yaw target
-            sp.yawspeed = NAN; // Let PX4 handle the speed
             _trajectory_setpoint_pub->publish(sp);
         }
 
         // Check if the total yaw rotation is complete (360 degrees)
         if (total_yaw_rotated >= 2 * M_PI) // Full 360-degree rotation
         {
+
             RCLCPP_INFO(this->get_logger(), "State: Yaw -> Land");
             _state = State::Land;
-            _state_start_time = this->now();
             land();
 
             // Reset yaw tracking variables for next use
@@ -178,7 +185,7 @@ void FlightDemo::runStateMachine()
 
     case State::Land:
     {
-        if (isStateTimeout(5.0)) // Wait for 5 seconds to land
+        if (_land_detected)
         {
             RCLCPP_INFO(this->get_logger(), "State: Land -> Done");
             disarm();
