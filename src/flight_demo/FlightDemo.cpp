@@ -35,7 +35,7 @@ FlightDemo::FlightDemo()
     sp.position[0] = NAN;   // Setpoint X position in meters
     sp.position[1] = NAN;   // Setpoint Y position in meters
     sp.position[2] = NAN;  // Altitude in meters
-    sp.yaw = NAN;          // Yaw in radians
+    // sp.yaw = NAN;          // Yaw in radians
     _trajectory_setpoint_pub->publish(sp);
 
     RCLCPP_INFO(this->get_logger(), "FlightDemo node initialized.");
@@ -71,7 +71,7 @@ void FlightDemo::runStateMachine()
     {
     case State::Idle:
     {
-        if (_vehicle_status.pre_flight_checks_pass)
+        if (_vehicle_status.pre_flight_checks_pass)//  && _vehicle_status.nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER
         {
             // Switch to offboard after 2 seconds
             if (isStateTimeout(2.0)) {
@@ -91,7 +91,7 @@ void FlightDemo::runStateMachine()
 
     case State::Arm:
     {
-        if (_vehicle_status.nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_OFFBOARD) {
+        if (_vehicle_status.nav_state == px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_OFFBOARD) { 
             arm();
             _state = State::Takeoff;
             _state_start_time = this->now();
@@ -125,14 +125,15 @@ void FlightDemo::runStateMachine()
         sp.position[0] = _home_setpoint[0];
         sp.position[1] = _home_setpoint[1];
         sp.position[2] = _home_setpoint[2];
-        sp.yaw = _home_setpoint[3]; 
+        // sp.yaw = _home_setpoint[3]; 
         _trajectory_setpoint_pub->publish(sp);
 
         if (isStateTimeout(60.0)) // Hover for some time
         {
-            RCLCPP_INFO(this->get_logger(), "State: Hover -> Yaw");
+            RCLCPP_INFO(this->get_logger(), "State: Hover -> Land");
+            land();
 
-            _state = State::Yaw;
+            _state = State::Land;
             _state_start_time = this->now();
         }
 
